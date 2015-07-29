@@ -14,18 +14,24 @@ guard 'sprockets', :destination => 'public/js', :root_file => 'views/ember/ember
   watch(/views\/ember\/.+\.js/)
 end
 
-require 'guard'
-require 'guard/plugin'
+require 'guard/compat/plugin'
 
 module ::Guard
-  class EmberHandlebars < Guard
-    def initialize(watchers = [], options = {})
-      super(watchers, options)
-      @options = options
+  class EmberHandlebars < Plugin
+    def initialize(options = {})
+      opts = options.dup || {}
+      @options = opts
+      [:notifications, :remove_prefix, :input].each { |key| opts.delete(key) }
+      super(opts)
       run_all
     end
 
     def run_all
+      # FIXME: there is a problem with the list of changed paths
+      # (either it's picking up files it shouldn't, or there's a
+      # recursion problem), resulting in the creation of file paths
+      # like the following:
+      # "views/ember/temp/compiled_templates/views/ember/temp/compiled_templates/views/ember/templates/artwork.js"
       run_on_change(Watcher.match_files(self, Dir.glob(File.join('**', '*.*'))))
     end
   
@@ -41,9 +47,11 @@ module ::Guard
     end
 
     def notify(changed_files)
-      ::Guard.guards.reject{ |guard| guard == self }.each do |guard|
+      ::Guard.state.session.plugins.all { |guard| guard != self }.each do |guard|
         paths = Watcher.match_files(guard, changed_files)
-        guard.run_on_change paths unless paths.empty?
+        if guard.respond_to? :run_on_change
+          guard.run_on_change paths unless paths.empty?
+        end
       end
     end
 
